@@ -330,7 +330,8 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
 
     KMS_RTP_SYNCHRONIZER_UNLOCK (self);
 
-    return FALSE;
+    self->priv->ssrc = ssrc;
+    /* ZZZ  return FALSE; */
   }
 
   pt = gst_rtp_buffer_get_payload_type (rtp_buffer);
