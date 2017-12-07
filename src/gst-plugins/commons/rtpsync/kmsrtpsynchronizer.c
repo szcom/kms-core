@@ -329,12 +329,15 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
     g_free (msg);
 
 
-    self->priv->ssrc = ssrc;
     /* ZZZ KMS_RTP_SYNCHRONIZER_UNLOCK (self); */
     /* ZZZ  return FALSE; */
   }
 
   pt = gst_rtp_buffer_get_payload_type (rtp_buffer);
+  if (self->priv->ssrc != ssrc) {
+    self->priv->ssrc = ssrc;
+    self->priv->pt = pt;
+  }
   if (pt != self->priv->pt || self->priv->clock_rate <= 0) {
     gchar *msg =
         g_strdup_printf ("Invalid clock-rate %d for PT %u, not changing PTS",
