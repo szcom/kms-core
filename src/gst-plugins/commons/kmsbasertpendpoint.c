@@ -2889,10 +2889,12 @@ kms_base_rtp_endpoint_rtpbin_on_new_ssrc (GstElement * rtpbin, guint session,
 
   switch (session) {
     case AUDIO_RTP_SESSION:
+      /* ALLOW SSRC change for audio session
       if (self->priv->audio_config->ssrc != 0) {
         break;
       }
-
+      */
+      
       self->priv->audio_config->ssrc = ssrc;
       break;
     case VIDEO_RTP_SESSION:
