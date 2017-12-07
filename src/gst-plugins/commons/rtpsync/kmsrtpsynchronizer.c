@@ -320,17 +320,17 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
   if (self->priv->ssrc == 0) {
     self->priv->ssrc = ssrc;
   } else if (ssrc != self->priv->ssrc) {
-    gchar *msg = g_strdup_printf ("Invalid SSRC (%u), not matching with %u",
-        ssrc, self->priv->ssrc);
+    gchar *msg = g_strdup_printf ("Invalid SSRC (%u), not matching with %u pt(old %u)",
+                                  ssrc, self->priv->ssrc, self->priv->pt);
 
     GST_ERROR_OBJECT (self, "%s", msg);
     g_set_error_literal (error, KMS_RTP_SYNC_ERROR, KMS_RTP_SYNC_INVALID_DATA,
         msg);
     g_free (msg);
 
-    KMS_RTP_SYNCHRONIZER_UNLOCK (self);
 
     self->priv->ssrc = ssrc;
+    /* ZZZ KMS_RTP_SYNCHRONIZER_UNLOCK (self); */
     /* ZZZ  return FALSE; */
   }
 
