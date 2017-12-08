@@ -1786,9 +1786,15 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
     gst_bin_add (GST_BIN (self), depayloader);
     // ZZZ gst_element_link_pads (depayloader, "src", agnostic, "sink");
     if (!gst_element_link_pads (depayloader, "src", agnostic, "sink")) {
+      GstPad * agn_sink_pad = gst_element_get_static_pad(agnostic, "sink");
+      GstPad * depay_src_pad = gst_pad_get_peer(agn_sink_pad);
+
+      gst_pad_unlink(depay_src_pad, agn_sink_pad);
       GST_DEBUG_OBJECT (self, "Failed to link agnostic sink");
       gst_element_release_request_pad (agnostic, "sink");
       gst_element_link_pads (depayloader, "src", agnostic, "sink");
+      g_object_unref (depay_src_pad);
+
     }
     gst_element_link_pads (rtpbin, GST_OBJECT_NAME (pad), depayloader, "sink");
     gst_element_sync_state_with_parent (depayloader);
