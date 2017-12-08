@@ -337,8 +337,8 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
   pt = gst_rtp_buffer_get_payload_type (rtp_buffer);
   if (self->priv->ssrc != ssrc && (8|pt|self->priv->pt) == 8) {
     /* ZZZ hack - overwrite buffer ssrc, will screw up RTCP */
-    gst_rtp_buffer_set_ssrc (rtp_buffer, self->priv->ssrc);
-    ssrc = self->priv->ssrc;
+    /* gst_rtp_buffer_set_ssrc (rtp_buffer, self->priv->ssrc); */
+    self->priv->ssrc = ssrc;
     self->priv->pt = pt;
   }
   if (pt != self->priv->pt || self->priv->clock_rate <= 0) {
