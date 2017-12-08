@@ -1791,7 +1791,6 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
 
       gst_pad_unlink(depay_src_pad, agn_sink_pad);
       GST_DEBUG_OBJECT (self, "Failed to link agnostic sink");
-      gst_element_release_request_pad (agnostic, "sink");
       gst_element_link_pads (depayloader, "src", agnostic, "sink");
       g_object_unref (depay_src_pad);
 
