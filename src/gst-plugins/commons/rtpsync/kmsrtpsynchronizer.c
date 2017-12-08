@@ -142,7 +142,8 @@ kms_rtp_synchronizer_add_clock_rate_for_pt (KmsRtpSynchronizer * self,
   KMS_RTP_SYNCHRONIZER_LOCK (self);
 
   /* TODO: allow more than one PT */
-  if (self->priv->clock_rate != 0) {
+  if (self->priv->clock_rate != 0 &&
+      clock_rate != self->priv->clock_rate /* ZZZ */) {
     const gchar *msg = "Only one PT allowed.";
 
     GST_ERROR_OBJECT (self, "%s", msg);
