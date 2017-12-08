@@ -1773,7 +1773,7 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
   }
 
   caps = gst_pad_query_caps (pad, NULL);
-  GST_WARN_OBJECT (self,
+  GST_WARNING_OBJECT (self,
       "New pad: %" GST_PTR_FORMAT " for linking to %" GST_PTR_FORMAT
       " with caps %" GST_PTR_FORMAT, pad, agnostic, caps);
 
