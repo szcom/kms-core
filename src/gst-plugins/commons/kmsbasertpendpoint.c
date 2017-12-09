@@ -245,7 +245,7 @@ struct _KmsBaseRtpEndpointPrivate
   KmsRtpSynchronizer *sync_video;
   gboolean perform_video_sync;
   /* SSRC audio N-to-1 Funnel */
-  GstElelemtn *audio_funnel;
+  GstElement *audio_funnel;
 };
 
 /* Signals and args */
