@@ -1813,6 +1813,7 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
         gst_element_sync_state_with_parent (self->priv->audio_funnel);
       }
       link_element_to_funnel(depayloader, self->priv->audio_funnel);
+      gst_element_sync_state_with_parent (depayloader);
     } else {
       gst_element_link_pads (depayloader, "src", agnostic, "sink");
       gst_element_link_pads (rtpbin, GST_OBJECT_NAME (pad), depayloader, "sink");
