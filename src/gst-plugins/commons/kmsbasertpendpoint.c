@@ -1808,8 +1808,8 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
     if (media == KMS_MEDIA_TYPE_AUDIO) {
       if (!self->priv->audio_funnel) {
         self->priv->audio_funnel = gst_element_factory_make ("funnel", NULL);
-        gst_element_link_pads (self->priv->audio_funnel, "src", agnostic, "sink");
         gst_bin_add (GST_BIN (self), self->priv->audio_funnel);
+        gst_element_link_pads (self->priv->audio_funnel, "src", agnostic, "sink");
         gst_element_sync_state_with_parent (self->priv->audio_funnel);
       }
       link_element_to_funnel(depayloader, self->priv->audio_funnel);
