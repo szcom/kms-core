@@ -244,6 +244,8 @@ struct _KmsBaseRtpEndpointPrivate
   KmsRtpSynchronizer *sync_audio;
   KmsRtpSynchronizer *sync_video;
   gboolean perform_video_sync;
+  /* SSRC audio N-to-1 Funnel */
+  GstElelemtn *audio_funnel;
 };
 
 /* Signals and args */
@@ -1746,6 +1748,25 @@ kms_base_rtp_endpoint_update_stats (KmsBaseRtpEndpoint * self,
 }
 
 static void
+link_element_to_funnel (GstElement * element, GstElement * funnel)
+{
+  GstPad *funnel_sink = gst_element_get_request_pad (funnel, "sink_%u");
+  GstPad *element_src = gst_element_get_static_pad (element, "src");
+  GstPadLinkReturn ret;
+
+
+  ret = gst_pad_link_full (element_src, funnel_sink, GST_PAD_LINK_CHECK_NOTHING);
+
+  if (G_UNLIKELY (GST_PAD_LINK_FAILED (ret))) {
+    GST_ERROR ("Linking %" GST_PTR_FORMAT " with %" GST_PTR_FORMAT " result %d",
+               element_src, funnel_sink, ret);
+  }
+
+  g_object_unref (element_src);
+  g_object_unref (funnel_sink);
+}
+
+static void
 kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
     KmsBaseRtpEndpoint * self)
 {
@@ -1784,19 +1805,19 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
     GST_WARNING_OBJECT (self, "Found depayloader %" GST_PTR_FORMAT, depayloader);
     kms_base_rtp_endpoint_update_stats (self, depayloader, media);
     gst_bin_add (GST_BIN (self), depayloader);
-    // ZZZ gst_element_link_pads (depayloader, "src", agnostic, "sink");
-    if (!gst_element_link_pads (depayloader, "src", agnostic, "sink")) {
-      GstPad * agn_sink_pad = gst_element_get_static_pad(agnostic, "sink");
-      GstPad * depay_src_pad = gst_pad_get_peer(agn_sink_pad);
-
-      gst_pad_unlink(depay_src_pad, agn_sink_pad);
-      GST_WARNING_OBJECT (self, "Failed to link agnostic sink");
+    if (media == KMS_MEDIA_TYPE_AUDIO) {
+      if (!self->priv->audio_funnel) {
+        self->priv->audio_funnel = gst_element_factory_make ("funnel", NULL);
+        gst_element_link_pads (self->priv->audio_funnel, "src", agnostic, "sink");
+        gst_bin_add (GST_BIN (self), self->priv->audio_funnel);
+        gst_element_sync_state_with_parent (self->priv->audio_funnel);
+      }
+      link_element_to_funnel(depayloader, self->priv->audio_funnel);
+    } else {
       gst_element_link_pads (depayloader, "src", agnostic, "sink");
-      g_object_unref (depay_src_pad);
-
+      gst_element_link_pads (rtpbin, GST_OBJECT_NAME (pad), depayloader, "sink");
+      gst_element_sync_state_with_parent (depayloader);
     }
-    gst_element_link_pads (rtpbin, GST_OBJECT_NAME (pad), depayloader, "sink");
-    gst_element_sync_state_with_parent (depayloader);
   } else {
     GstElement *fake = gst_element_factory_make ("fakesink", NULL);
 
