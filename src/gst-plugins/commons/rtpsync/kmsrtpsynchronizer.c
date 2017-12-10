@@ -143,7 +143,7 @@ kms_rtp_synchronizer_add_clock_rate_for_pt (KmsRtpSynchronizer * self,
 
   /* TODO: allow more than one PT */
   if (self->priv->clock_rate != 0 &&
-      (pt|self->priv->pt|8) != 8 /* ZZZ */) {
+      (pt|self->priv->pt|8) != 8 /* ZZZ dont care if PCMA becomes PCMU */) {
     const gchar *msg = "Only one PT allowed.";
 
     GST_ERROR_OBJECT (self, "%s", msg);
@@ -336,8 +336,7 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
 
   pt = gst_rtp_buffer_get_payload_type (rtp_buffer);
   if (self->priv->ssrc != ssrc && (8|pt|self->priv->pt) == 8) {
-    /* ZZZ hack - overwrite buffer ssrc, will screw up RTCP */
-    /* gst_rtp_buffer_set_ssrc (rtp_buffer, self->priv->ssrc); */
+    /* ZZZ hack - PCMA/PCMU are ok */
     self->priv->ssrc = ssrc;
     self->priv->pt = pt;
   }

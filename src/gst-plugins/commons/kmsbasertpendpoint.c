@@ -1794,7 +1794,7 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
   }
 
   caps = gst_pad_query_caps (pad, NULL);
-  GST_WARNING_OBJECT (self,
+  GST_DEBUG_OBJECT (self,
       "New pad: %" GST_PTR_FORMAT " for linking to %" GST_PTR_FORMAT
       " with caps %" GST_PTR_FORMAT, pad, agnostic, caps);
 
@@ -1802,7 +1802,7 @@ kms_base_rtp_endpoint_rtpbin_pad_added (GstElement * rtpbin, GstPad * pad,
   gst_caps_unref (caps);
 
   if (depayloader != NULL) {
-    GST_WARNING_OBJECT (self, "Found depayloader %" GST_PTR_FORMAT, depayloader);
+    GST_DEBUG_OBJECT (self, "Found depayloader %" GST_PTR_FORMAT, depayloader);
     kms_base_rtp_endpoint_update_stats (self, depayloader, media);
     gst_bin_add (GST_BIN (self), depayloader);
     if (media == KMS_MEDIA_TYPE_AUDIO) {
