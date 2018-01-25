@@ -313,6 +313,7 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
   guint32 ssrc, ts;
   gint32 clock_rate;
   gboolean ret = TRUE;
+  gboolean using_g711 = FALSE;
 
   ssrc = gst_rtp_buffer_get_ssrc (rtp_buffer);
 
@@ -335,9 +336,13 @@ kms_rtp_synchronizer_process_rtp_buffer_mapped (KmsRtpSynchronizer * self,
   }
 
   pt = gst_rtp_buffer_get_payload_type (rtp_buffer);
-  if (self->priv->ssrc != ssrc && (8|pt|self->priv->pt) == 8) {
+  using_g711 = (8|pt|self->priv->pt) == 8;
+  if (self->priv->ssrc != ssrc && using_g711) {
     /* ZZZ hack - PCMA/PCMU are ok */
     self->priv->ssrc = ssrc;
+  }
+  if (pt != self->priv->pt && using_g711) {
+    /* ZZZ hack - PCMA/PCMU are ok */
     self->priv->pt = pt;
   }
   if (pt != self->priv->pt || self->priv->clock_rate <= 0) {
