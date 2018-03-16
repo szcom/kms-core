@@ -26,6 +26,7 @@
 #define GST_CAT_DEFAULT kms_enc_tree_bin_debug
 GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
 
+#define LEAKY_TIME 600000000    /*600 ms */
 #define kms_enc_tree_bin_parent_class parent_class
 G_DEFINE_TYPE (KmsEncTreeBin, kms_enc_tree_bin, KMS_TYPE_TREE_BIN);
 
@@ -105,7 +106,7 @@ set_encoder_configuration (GstElement * encoder, GstStructure * codec_config,
       const gchar *name = g_param_spec_get_name (props[i]);
 
       if (gst_structure_has_field (config, name)) {
-        GValue final_value = { 0, };
+        GValue final_value = G_VALUE_INIT;
         gchar *st_value;
         const GValue *val;
 
@@ -479,6 +480,7 @@ kms_enc_tree_bin_configure (KmsEncTreeBin * self, const GstCaps * caps,
   convert = kms_utils_create_convert_for_caps (caps);
   mediator = kms_utils_create_mediator_element (caps);
   queue = gst_element_factory_make ("queue", NULL);
+  g_object_set (queue, "leaky", 2, "max-size-time", LEAKY_TIME, NULL);
 
   if (rate) {
     gst_bin_add (GST_BIN (self), rate);

@@ -110,13 +110,13 @@ gst_element_sync_state_with_parent_target_state (GstElement * element)
 /* Caps begin */
 
 static GstStaticCaps static_audio_caps =
-GST_STATIC_CAPS (KMS_AGNOSTIC_AUDIO_CAPS);
+    GST_STATIC_CAPS (KMS_AGNOSTIC_AUDIO_CAPS);
 static GstStaticCaps static_video_caps =
-GST_STATIC_CAPS (KMS_AGNOSTIC_VIDEO_CAPS);
-static GstStaticCaps static_rtp_caps = GST_STATIC_CAPS (KMS_AGNOSTIC_RTP_CAPS);
+    GST_STATIC_CAPS (KMS_AGNOSTIC_VIDEO_CAPS);
+static GstStaticCaps static_rtp_caps =
+    GST_STATIC_CAPS (KMS_AGNOSTIC_RTP_CAPS);
 static GstStaticCaps static_raw_caps =
-    GST_STATIC_CAPS
-    ("video/x-raw; video/x-raw(ANY); audio/x-raw; audio/x-raw(ANY);");
+    GST_STATIC_CAPS (KMS_AGNOSTIC_RAW_CAPS);
 
 static gboolean
 caps_can_intersect_with_static (const GstCaps * caps,
@@ -263,7 +263,7 @@ kms_utils_convert_media_type (KmsMediaType media_type)
   }
 }
 
-/* key frame management */
+/* keyframe management */
 
 #define DROPPING_UNTIL_KEY_FRAME "dropping-until-key-frame"
 G_DEFINE_QUARK (DROPPING_UNTIL_KEY_FRAME, dropping_until_key_frame);
@@ -390,7 +390,7 @@ drop_until_keyframe_probe (GstPad * pad, GstPadProbeInfo * info,
   set_dropping (pad, FALSE);
   GST_OBJECT_UNLOCK (pad);
 
-  GST_DEBUG_OBJECT (pad, "Finish dropping buffers until key frame");
+  GST_DEBUG_OBJECT (pad, "Finish dropping buffers until keyframe");
 
   /* So this buffer is a keyframe we don't need this probe any more */
   return GST_PAD_PROBE_REMOVE;
@@ -401,10 +401,10 @@ kms_utils_drop_until_keyframe (GstPad * pad, gboolean all_headers)
 {
   GST_OBJECT_LOCK (pad);
   if (is_dropping (pad)) {
-    GST_DEBUG_OBJECT (pad, "Already dropping buffers until key frame");
+    GST_DEBUG_OBJECT (pad, "Already dropping buffers until keyframe");
     GST_OBJECT_UNLOCK (pad);
   } else {
-    GST_DEBUG_OBJECT (pad, "Start dropping buffers until key frame");
+    GST_DEBUG_OBJECT (pad, "Start dropping buffers until keyframe");
     set_dropping (pad, TRUE);
     GST_OBJECT_UNLOCK (pad);
     gst_pad_add_probe (pad,
@@ -421,7 +421,7 @@ discont_detection_probe (GstPad * pad, GstPadProbeInfo * info, gpointer data)
 
   if (GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DISCONT)) {
     if (GST_BUFFER_FLAG_IS_SET (buffer, GST_BUFFER_FLAG_DELTA_UNIT)) {
-      GST_WARNING_OBJECT (pad, "Discont detected");
+      GST_WARNING_OBJECT (pad, "Stream discontinuity detected on non-keyframe");
       kms_utils_drop_until_keyframe (pad, FALSE);
 
       return GST_PAD_PROBE_DROP;
@@ -437,7 +437,13 @@ gap_detection_probe (GstPad * pad, GstPadProbeInfo * info, gpointer data)
   GstEvent *event = GST_PAD_PROBE_INFO_EVENT (info);
 
   if (GST_EVENT_TYPE (event) == GST_EVENT_GAP) {
-    GST_WARNING_OBJECT (pad, "Gap detected");
+    GstClockTime timestamp;
+    GstClockTime duration;
+    gst_event_parse_gap (event, &timestamp, &duration);
+    GST_WARNING_OBJECT (pad,
+        "Stream gap detected, timestamp: %" GST_TIME_FORMAT ", "
+        "duration: %" GST_TIME_FORMAT,
+        GST_TIME_ARGS(timestamp), GST_TIME_ARGS(duration));
     send_force_key_unit_event (pad, FALSE);
     return GST_PAD_PROBE_DROP;
   }
@@ -448,8 +454,8 @@ gap_detection_probe (GstPad * pad, GstPadProbeInfo * info, gpointer data)
 void
 kms_utils_manage_gaps (GstPad * pad)
 {
-  gst_pad_add_probe (pad, GST_PAD_PROBE_TYPE_BUFFER, discont_detection_probe,
-      NULL, NULL);
+  gst_pad_add_probe (pad, GST_PAD_PROBE_TYPE_BUFFER,
+      discont_detection_probe, NULL, NULL);
   gst_pad_add_probe (pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
       gap_detection_probe, NULL, NULL);
 }
@@ -859,7 +865,7 @@ remb_event_manager_update_min (RembEventManager * manager, guint bitrate,
       GUINT_TO_POINTER (ssrc));
 
   if (last_value != NULL) {
-    new_br = bitrate != last_value->bitrate;
+    new_br = (bitrate != last_value->bitrate);
     last_value->bitrate = bitrate;
     last_value->ts = kms_utils_get_time_nsecs ();
   } else {
@@ -899,8 +905,9 @@ remb_probe (GstPad * pad, GstPadProbeInfo * info, gpointer user_data)
     return GST_PAD_PROBE_OK;
   }
 
-  GST_TRACE_OBJECT (pad, "<%" G_GUINT32_FORMAT ", %" G_GUINT32_FORMAT ">", ssrc,
-      bitrate);
+  GST_TRACE_OBJECT (pad, "REMB: 'on-feedback-rtcp' received upstream event"
+      ", SSRC: %" G_GUINT32_FORMAT
+      ", bitrate: %" G_GUINT32_FORMAT, ssrc, bitrate);
 
   remb_event_manager_update_min (manager, bitrate, ssrc);
 
@@ -1335,6 +1342,8 @@ set_func:
       kms_query_data_destroy);
 }
 
+// ------------------------ Adjust PTS ------------------------
+
 typedef struct _AdjustPtsData
 {
   GstElement *element;
@@ -1342,13 +1351,13 @@ typedef struct _AdjustPtsData
 } AdjustPtsData;
 
 static void
-adjust_pts_data_destroy (AdjustPtsData * data)
+kms_utils_adjust_pts_data_destroy (AdjustPtsData * data)
 {
   g_slice_free (AdjustPtsData, data);
 }
 
 static AdjustPtsData *
-adjust_pts_data_new (GstElement * element)
+kms_utils_adjust_pts_data_new (GstElement * element)
 {
   AdjustPtsData *data;
 
@@ -1360,70 +1369,83 @@ adjust_pts_data_new (GstElement * element)
 }
 
 static void
-kms_rtp_receiver_adjust_pts (AdjustPtsData * data, GstBuffer ** buffer)
+kms_utils_depayloader_adjust_pts_out (AdjustPtsData * data, GstBuffer * buffer)
 {
-  if (GST_CLOCK_TIME_IS_VALID (data->last_pts) &&
-      GST_BUFFER_PTS (*buffer) <= data->last_pts) {
-    GstClockTime pts_orig;
+  const GstClockTime pts_current = GST_BUFFER_PTS (buffer);
+  GstClockTime pts_fixed = pts_current;
 
-    *buffer = gst_buffer_make_writable (*buffer);
-    pts_orig = GST_BUFFER_PTS (*buffer);
-    GST_BUFFER_PTS (*buffer) = data->last_pts + GST_MSECOND;
+  if (GST_CLOCK_TIME_IS_VALID (data->last_pts)
+      && pts_current <= data->last_pts) {
+    pts_fixed = data->last_pts + GST_MSECOND;
 
-    GST_WARNING_OBJECT (data->element,
-        "Non incremental PTS (last PTS: %"
-        GST_TIME_FORMAT ", PTS: %" GST_TIME_FORMAT ", new PTS: %"
-        GST_TIME_FORMAT ")", GST_TIME_ARGS (data->last_pts),
-        GST_TIME_ARGS (pts_orig), GST_TIME_ARGS (GST_BUFFER_PTS (*buffer)));
+    GST_WARNING_OBJECT (data->element, "Fix PTS not strictly increasing"
+        ", last: %" GST_TIME_FORMAT
+        ", current: %" GST_TIME_FORMAT
+        ", fixed = last + 1: %" GST_TIME_FORMAT,
+        GST_TIME_ARGS (data->last_pts),
+        GST_TIME_ARGS (pts_current),
+        GST_TIME_ARGS (pts_fixed));
+
+    GST_BUFFER_PTS (buffer) = pts_fixed;
   }
 
-  data->last_pts = GST_BUFFER_PTS (*buffer);
+  GST_TRACE_OBJECT (data->element, "Adjust output DTS"
+      ", current DTS: %" GST_TIME_FORMAT
+      ", new DTS = PTS: %" GST_TIME_FORMAT,
+      GST_TIME_ARGS (GST_BUFFER_DTS (buffer)),
+      GST_TIME_ARGS (pts_fixed));
 
-  GST_TRACE_OBJECT (data->element, "PTS: %" GST_TIME_FORMAT,
-      GST_TIME_ARGS (GST_BUFFER_PTS (*buffer)));
+  GST_BUFFER_DTS (buffer) = pts_fixed;
+  data->last_pts = pts_fixed;
 }
 
 static gboolean
-adjust_pts_it (GstBuffer ** buffer, guint idx, AdjustPtsData * data)
+kms_utils_depayloader_pts_out_it (GstBuffer ** buffer, guint idx,
+    AdjustPtsData * data)
 {
-  kms_rtp_receiver_adjust_pts (data, buffer);
+  *buffer = gst_buffer_make_writable (*buffer);
+  kms_utils_depayloader_adjust_pts_out (data, *buffer);
 
   return TRUE;
 }
 
 static GstPadProbeReturn
-adjust_pts_probe (GstPad * pad, GstPadProbeInfo * info, AdjustPtsData * data)
+kms_utils_depayloader_pts_out_probe (GstPad * pad, GstPadProbeInfo * info,
+    AdjustPtsData * data)
 {
-  if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER_LIST) {
+  if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER) {
+    GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER (info);
+
+    buffer = gst_buffer_make_writable (buffer);
+    kms_utils_depayloader_adjust_pts_out (data, buffer);
+    GST_PAD_PROBE_INFO_DATA (info) = buffer;
+  }
+  else if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER_LIST) {
     GstBufferList *list = GST_PAD_PROBE_INFO_BUFFER_LIST (info);
 
     list = gst_buffer_list_make_writable (list);
-    gst_buffer_list_foreach (list, (GstBufferListFunc) adjust_pts_it, data);
+    gst_buffer_list_foreach (list,
+        (GstBufferListFunc) kms_utils_depayloader_pts_out_it, data);
     GST_PAD_PROBE_INFO_DATA (info) = list;
-  } else if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER) {
-    GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER (info);
-
-    kms_rtp_receiver_adjust_pts (data, &buffer);
-    GST_PAD_PROBE_INFO_DATA (info) = buffer;
   }
 
   return GST_PAD_PROBE_OK;
 }
 
 void
-kms_utils_adjust_output_pts (GstElement * depayloader)
+kms_utils_depayloader_monitor_pts_out (GstElement * depayloader)
 {
-  GstPad *pad;
+  GstPad *src_pad;
 
-  GST_INFO_OBJECT (depayloader, "Adding adjust PTS algorithm");
+  GST_INFO_OBJECT (depayloader, "Add probe: Adjust depayloader PTS out");
 
-  pad = gst_element_get_static_pad (depayloader, "src");
-  gst_pad_add_probe (pad,
+  src_pad = gst_element_get_static_pad (depayloader, "src");
+  gst_pad_add_probe (src_pad,
       GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_BUFFER_LIST,
-      (GstPadProbeCallback) adjust_pts_probe,
-      adjust_pts_data_new (depayloader),
-      (GDestroyNotify) adjust_pts_data_destroy);
-  g_object_unref (pad);
+      (GstPadProbeCallback) kms_utils_depayloader_pts_out_probe,
+      kms_utils_adjust_pts_data_new (depayloader),
+      (GDestroyNotify) kms_utils_adjust_pts_data_destroy);
+  g_object_unref (src_pad);
 }
 
 static void init_debug (void) __attribute__ ((constructor));
@@ -1441,8 +1463,8 @@ init_debug (void)
     g_slice_free (type, data);                  \
   }
 
-KMS_UTILS_DESTROY (guint64);
-KMS_UTILS_DESTROY (gsize);
-KMS_UTILS_DESTROY (GstClockTime);
-KMS_UTILS_DESTROY (gfloat);
-KMS_UTILS_DESTROY (guint);
+KMS_UTILS_DESTROY (guint64)
+KMS_UTILS_DESTROY (gsize)
+KMS_UTILS_DESTROY (GstClockTime)
+KMS_UTILS_DESTROY (gfloat)
+KMS_UTILS_DESTROY (guint)

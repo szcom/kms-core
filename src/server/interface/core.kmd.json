@@ -1,6 +1,6 @@
 {
   "name": "core",
-  "version": "6.6.1",
+  "version": "6.7.0",
   "code": {
     "kmd": {
       "java": {
@@ -544,7 +544,7 @@
       "properties": [
         {
           "name": "minVideoRecvBandwidth",
-          "doc": "Minimum bandwidth announced for video reception, in kbps. The default value is 100 kbps. 0 is considered unconstrained.",
+          "doc": "Minimum bandwidth announced for video reception, in kbps. The default and absolute minimum value is 30 kbps, even if a lower value is set.",
           "type": "int"
         },
         {
@@ -690,7 +690,7 @@
         },
         {
           "name": "disconnect",
-          "doc": "Disconnectes two media elements. This will release the source pads of the source media element, and the sink pads of the sink media element.",
+          "doc": "Disconnects two media elements. This will release the source pads of the source media element, and the sink pads of the sink media element.",
           "params": [
             {
               "name": "sink",
