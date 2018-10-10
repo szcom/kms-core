@@ -29,6 +29,7 @@
 #include "kms-core-enumtypes.h"
 #include "kms-core-marshal.h"
 #include "sdp_utils.h"
+#include "sdpagent/kmssdpmediadirext.h"
 #include "sdpagent/kmssdpulpfecext.h"
 #include "sdpagent/kmssdpredundantext.h"
 #include "sdpagent/kmssdprtpavpfmediahandler.h"
@@ -75,6 +76,8 @@ G_DEFINE_TYPE_WITH_CODE (KmsBaseRtpEndpoint, kms_base_rtp_endpoint,
 #define JB_INITIAL_LATENCY 0
 #define JB_READY_AUDIO_LATENCY 100
 #define JB_READY_VIDEO_LATENCY 500
+#define RTCP_FB_CCM_FIR   SDP_MEDIA_RTCP_FB_CCM " " SDP_MEDIA_RTCP_FB_FIR
+#define RTCP_FB_NACK_PLI  SDP_MEDIA_RTCP_FB_NACK " " SDP_MEDIA_RTCP_FB_PLI
 
 #define DEFAULT_MIN_PORT 1
 #define DEFAULT_MAX_PORT G_MAXUINT16
@@ -208,6 +211,7 @@ struct _KmsBaseRtpEndpointPrivate
 
   GstElement *rtpbin;
   KmsMediaState media_state;
+  GstSDPDirection offer_dir;
 
   gboolean support_fec;
   gboolean rtcp_mux;
@@ -263,13 +267,14 @@ enum
 
 static guint obj_signals[LAST_SIGNAL] = { 0 };
 
+#define DEFAULT_OFFER_DIR   GST_SDP_DIRECTION_SENDRECV
 #define DEFAULT_RTCP_MUX    FALSE
 #define DEFAULT_RTCP_NACK    FALSE
 #define DEFAULT_RTCP_REMB    FALSE
 #define DEFAULT_TARGET_BITRATE    0
 #define MIN_VIDEO_RECV_BW_DEFAULT 0
-#define MIN_VIDEO_SEND_BW_DEFAULT 100
-#define MAX_VIDEO_SEND_BW_DEFAULT 500
+#define MIN_VIDEO_SEND_BW_DEFAULT 100  // kbps
+#define MAX_VIDEO_SEND_BW_DEFAULT 500  // kbps
 
 enum
 {
@@ -286,6 +291,7 @@ enum
   PROP_MIN_PORT,
   PROP_MAX_PORT,
   PROP_SUPPORT_FEC,
+  PROP_OFFER_DIR,
   PROP_LAST
 };
 
@@ -494,6 +500,36 @@ kms_base_rtp_endpoint_config_rtp_hdr_ext (KmsBaseRtpEndpoint * self,
 
 /* Media handler management begin */
 
+static GstSDPDirection
+on_offer_media_direction (KmsSdpMediaDirectionExt * ext,
+    KmsBaseRtpEndpoint * self)
+{
+  GstSDPDirection offer_dir;
+
+  g_object_get (self, "offer-dir", &offer_dir, NULL);
+
+  return offer_dir;
+}
+
+static GstSDPDirection
+on_answer_media_direction (KmsSdpMediaDirectionExt * ext,
+    GstSDPDirection dir, KmsBaseRtpEndpoint * self)
+{
+  // RFC3264 6.1
+  switch (dir) {
+    case GST_SDP_DIRECTION_SENDONLY:
+      return GST_SDP_DIRECTION_RECVONLY;
+    case GST_SDP_DIRECTION_RECVONLY:
+      return GST_SDP_DIRECTION_SENDONLY;
+    case GST_SDP_DIRECTION_SENDRECV:
+      return GST_SDP_DIRECTION_SENDRECV;
+    case GST_SDP_DIRECTION_INACTIVE:
+      return GST_SDP_DIRECTION_INACTIVE;
+    default:
+      return GST_SDP_DIRECTION_SENDRECV;
+  }
+}
+
 static gboolean
 on_offered_ulp_fec_cb (KmsSdpUlpFecExt * ext, guint pt, guint clock_rate,
     gpointer user_data)
@@ -520,9 +556,24 @@ static void
 kms_base_rtp_configure_extensions (KmsBaseRtpEndpoint * self,
     const gchar * media, KmsSdpMediaHandler * handler)
 {
+  KmsSdpMediaDirectionExt *mediadirext;
   KmsSdpUlpFecExt *ulpfecext;
   KmsSdpRedundantExt *redext;
   ExtData *edata;
+
+  mediadirext = kms_sdp_media_direction_ext_new ();
+
+  g_signal_connect (mediadirext, "on-offer-media-direction",
+      G_CALLBACK (on_offer_media_direction), self);
+  g_signal_connect (mediadirext, "on-answer-media-direction",
+      G_CALLBACK (on_answer_media_direction), self);
+
+  kms_sdp_media_handler_add_media_extension (handler,
+      KMS_I_SDP_MEDIA_EXTENSION (mediadirext));
+
+  if (!self->priv->support_fec) {
+    return;
+  }
 
   edata = ext_data_new ();
   kms_list_append (self->priv->prot_medias, g_strdup (media), edata);
@@ -581,9 +632,7 @@ kms_base_rtp_create_media_handler (KmsBaseSdpEndpoint * base_sdp,
     err = NULL;
   }
 
-  if (self->priv->support_fec) {
-    kms_base_rtp_configure_extensions (self, media, *handler);
-  }
+  kms_base_rtp_configure_extensions (self, media, *handler);
 }
 
 /* Media handler management end */
@@ -695,7 +744,7 @@ kms_base_rtp_endpoint_is_video_rtcp_nack (KmsBaseRtpEndpoint * self)
 /* Configure media SDP begin */
 static GObject *
 kms_base_rtp_endpoint_create_rtp_session (KmsBaseRtpEndpoint * self,
-    guint session_id, const gchar * rtpbin_pad_name, guint rtp_profile,
+    guint session_id, const gchar * rtpbin_pad_name, GstRTPProfile rtp_profile,
     GstSDPDirection direction)
 {
   GstElement *rtpbin = self->priv->rtpbin;
@@ -729,13 +778,12 @@ kms_base_rtp_endpoint_create_rtp_session (KmsBaseRtpEndpoint * self,
 
   KMS_ELEMENT_UNLOCK (self);
 
-  g_object_set (rtpsession, "rtcp-min-interval",
-      RTCP_MIN_INTERVAL * GST_MSECOND, "rtp-profile", rtp_profile, NULL);
+  g_object_set (rtpsession, "rtp-profile", rtp_profile, NULL);
 
   return rtpsession;
 }
 
-static guint
+static GstRTPProfile
 kms_base_rtp_endpoint_media_proto_to_rtp_profile (KmsBaseRtpEndpoint * self,
     const gchar * proto)
 {
@@ -1016,11 +1064,15 @@ kms_base_rtp_endpoint_create_remb_manager (KmsBaseRtpEndpoint *self,
 
   GObject *rtpsession = kms_base_rtp_endpoint_get_internal_session (
       KMS_BASE_RTP_ENDPOINT(self), VIDEO_RTP_SESSION);
-  if (!rtpsession) {
-    GST_WARNING_OBJECT (self,
-        "Abort: No RTP Session with ID %u", VIDEO_RTP_SESSION);
+  if (rtpsession == NULL) {
     return;
   }
+
+  // Decrease minimum interval between RTCP packets,
+  // for better reaction times in case of bad network
+  GST_INFO_OBJECT (self, "REMB: Set RTCP min interval to 500ms");
+  g_object_set (rtpsession, "rtcp-min-interval",
+      RTCP_MIN_INTERVAL * GST_MSECOND, NULL);
 
   g_object_get (self, "max-video-recv-bandwidth", &max_recv_bw, NULL);
   self->priv->rl =
@@ -1539,17 +1591,17 @@ complete_caps_with_fb (GstCaps * caps, const GstSDPMedia * media,
   for (a = 0;; a++) {
     const gchar *attr;
 
-    attr = gst_sdp_media_get_attribute_val_n (media, RTCP_FB, a);
+    attr = gst_sdp_media_get_attribute_val_n (media, SDP_MEDIA_RTCP_FB, a);
     if (attr == NULL) {
       break;
     }
 
-    if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_FIR)) {
+    if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_CCM_FIR)) {
       fir = TRUE;
       continue;
     }
 
-    if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_PLI)) {
+    if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_NACK_PLI)) {
       pli = TRUE;
       continue;
     }
@@ -1931,8 +1983,6 @@ static GstPadProbeReturn
 kms_base_rtp_endpoint_sync_rtcp_probe (GstPad * pad, GstPadProbeInfo * info,
     KmsRtpSynchronizer * sync)
 {
-  return GST_PAD_PROBE_OK;
-
   if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER) {
     GstBuffer *buffer = GST_PAD_PROBE_INFO_BUFFER (info);
 
@@ -2408,6 +2458,9 @@ kms_base_rtp_endpoint_set_property (GObject * object, guint property_id,
       self->priv->max_port = v;
       break;
     }
+    case PROP_OFFER_DIR:
+      self->priv->offer_dir = g_value_get_enum (value);
+      break;
     default:
       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
       break;
@@ -2447,6 +2500,9 @@ kms_base_rtp_endpoint_get_property (GObject * object, guint property_id,
       break;
     case PROP_MEDIA_STATE:
       g_value_set_enum (value, self->priv->media_state);
+      break;
+    case PROP_OFFER_DIR:
+      g_value_set_enum (value, self->priv->offer_dir);
       break;
     case PROP_REMB_PARAMS:
       if (self->priv->rl != NULL) {
@@ -2855,6 +2911,11 @@ kms_base_rtp_endpoint_class_init (KmsBaseRtpEndpointClass * klass)
       g_param_spec_enum ("media-state", "Media state", "Media state",
           KMS_TYPE_MEDIA_STATE, KMS_MEDIA_STATE_DISCONNECTED,
           G_PARAM_READABLE | G_PARAM_STATIC_STRINGS));
+
+  g_object_class_install_property (object_class, PROP_OFFER_DIR,
+      g_param_spec_enum ("offer-dir", "Offer direction", "Offer direction",
+          KMS_TYPE_SDP_DIRECTION, DEFAULT_OFFER_DIR,
+          G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS));
 
   g_object_class_install_property (object_class, PROP_RTCP_MUX,
       g_param_spec_boolean ("rtcp-mux", "RTCP mux",
@@ -3391,6 +3452,8 @@ kms_base_rtp_endpoint_init (KmsBaseRtpEndpoint * self)
 
   self->priv->min_port = DEFAULT_MIN_PORT;
   self->priv->max_port = DEFAULT_MAX_PORT;
+
+  self->priv->offer_dir = DEFAULT_OFFER_DIR;
 }
 
 GObject *
@@ -3398,12 +3461,15 @@ kms_base_rtp_endpoint_get_internal_session (KmsBaseRtpEndpoint *self,
     guint session_id)
 {
   GstElement *rtpbin = self->priv->rtpbin; // GstRtpBin*
-  GObject *rtpsession; // RTPSession* from GstRtpBin->GstRtpSession
-  g_signal_emit_by_name (rtpbin, "get-internal-session", session_id, &rtpsession);
-  if (!rtpsession) {
-    GST_ERROR_OBJECT (self, "GstRtpBin lacks internal RTPSession");
-    return NULL;
+  GObject *rtpsession = NULL; // RTPSession* from GstRtpBin->GstRtpSession
+
+  g_signal_emit_by_name (rtpbin, "get-internal-session", session_id,
+      &rtpsession);
+  if (rtpsession == NULL) {
+    GST_WARNING_OBJECT (self, "GstRtpBin: No RTP session, id: %u",
+        session_id);
   }
+
   return rtpsession;
 }
 

@@ -25,6 +25,7 @@
 #include <functional>
 
 /* This is included to avoid problems with slots and lamdas */
+#include <memory>
 #include <type_traits>
 #include <sigc++/sigc++.h>
 
@@ -127,7 +128,7 @@ void MediaSet::doGarbageCollection ()
       sessionInUse[it.first] = false;
       lock.unlock();
     } else {
-      GST_WARNING ("Session timeout: %s", it.first.c_str() );
+      GST_WARNING ("Remove inactive session: %s", it.first.c_str() );
       unrefSession (it.first);
     }
   }
@@ -137,8 +138,7 @@ MediaSet::MediaSet()
 {
   terminated = false;
 
-  workers = std::shared_ptr<WorkerPool> (new WorkerPool (
-      MEDIASET_THREADS_DEFAULT) );
+  workers = std::make_shared<WorkerPool>(MEDIASET_THREADS_DEFAULT);
 
   thread = std::thread ( [&] () {
     std::unique_lock <std::recursive_mutex> lock (recMutex);
@@ -165,8 +165,8 @@ MediaSet::~MediaSet ()
 {
   std::unique_lock <std::recursive_mutex> lock (recMutex);
 
-  if (!objectsMap.empty() ) {
-    GST_DEBUG ("Still %zu object/s alive", objectsMap.size() );
+  if (objectsMap.size() > 1) {
+    GST_WARNING ("Still %zu object/s alive", objectsMap.size());
   }
 
   terminated = true;
@@ -226,7 +226,7 @@ MediaSet::ref (MediaObjectImpl *mediaObjectPtr)
   std::unique_lock <std::recursive_mutex> lock (recMutex);
   std::shared_ptr<MediaObjectImpl> mediaObject;
 
-  if (mediaObjectPtr == NULL) {
+  if (mediaObjectPtr == nullptr) {
     throw KurentoException (MEDIA_OBJECT_NOT_FOUND, "Invalid object");
   }
 
@@ -433,6 +433,7 @@ MediaSet::unref (const std::string &sessionId,
     }
 
     childrenMap.erase (mediaObject->getId() );
+    reverseSessionMap.erase (mediaObject->getId() );
   }
 
   auto eventIt = eventHandler.find (sessionId);

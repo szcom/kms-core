@@ -24,19 +24,10 @@ message(STATUS "Project version: ${PROJECT_NAME}-${PROJECT_VERSION}")
 # Compiler flags
 include(CommonBuildFlags)
 common_buildflags_set()
+#common_buildflags_print()
 
-#message("CMAKE_C_FLAGS: ${CMAKE_C_FLAGS}")
-#message("CMAKE_CXX_FLAGS: ${CMAKE_CXX_FLAGS}")
-#message("CMAKE_STATIC_LINKER_FLAGS: ${CMAKE_STATIC_LINKER_FLAGS}")
-#message("CMAKE_SHARED_LINKER_FLAGS: ${CMAKE_SHARED_LINKER_FLAGS}")
-#message("CMAKE_MODULE_LINKER_FLAGS: ${CMAKE_MODULE_LINKER_FLAGS}")
-#message("CMAKE_EXE_LINKER_FLAGS: ${CMAKE_EXE_LINKER_FLAGS}")
-#message("CMAKE_C_FLAGS_DEBUG: ${CMAKE_C_FLAGS_DEBUG}")
-#message("CMAKE_CXX_FLAGS_DEBUG: ${CMAKE_CXX_FLAGS_DEBUG}")
-#message("CMAKE_STATIC_LINKER_FLAGS_DEBUG: ${CMAKE_STATIC_LINKER_FLAGS_DEBUG}")
-#message("CMAKE_SHARED_LINKER_FLAGS_DEBUG: ${CMAKE_SHARED_LINKER_FLAGS_DEBUG}")
-#message("CMAKE_MODULE_LINKER_FLAGS_DEBUG: ${CMAKE_MODULE_LINKER_FLAGS_DEBUG}")
-#message("CMAKE_EXE_LINKER_FLAGS_DEBUG: ${CMAKE_EXE_LINKER_FLAGS_DEBUG}")
+# Development: Exceptions to "Warnings are Errors" rule
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=unused-function")
 
 # FIXME Disable error when macros __TIME__, __DATE__ or __TIMESTAMP__ are encountered
 include(CheckCXXCompilerFlag)
@@ -44,6 +35,9 @@ CHECK_CXX_COMPILER_FLAG("-Wno-error=date-time" HAS_WARNING_DATE_TIME)
 if(HAS_WARNING_DATE_TIME)
   set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-error=date-time")
 endif()
+
+# Development
+#set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-error=unused-function")
 
 # Decide between std::regex or boost::regex
 include(CheckCXXSourceCompiles)

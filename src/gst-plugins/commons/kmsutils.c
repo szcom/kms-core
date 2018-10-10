@@ -107,12 +107,43 @@ gst_element_sync_state_with_parent_target_state (GstElement * element)
   return TRUE;
 }
 
+/* ---- GstBin ---- */
+
+void
+kms_utils_bin_remove (GstBin * bin, GstElement * element)
+{
+  GST_DEBUG ("Remove %" GST_PTR_FORMAT " from %" GST_PTR_FORMAT, element, bin);
+
+  if (!gst_element_set_locked_state (element, TRUE)) {
+    GST_ERROR ("Cannot lock element %" GST_PTR_FORMAT, element);
+  }
+
+  gst_element_set_state (element, GST_STATE_NULL);
+
+  // gst_bin_remove() unlinks all pads and unrefs the object
+  gst_bin_remove (bin, element);
+}
+
+/* ---- GstElement ---- */
+
+GstElement* kms_utils_element_factory_make (const gchar *factoryname,
+    const gchar *name_prefix)
+{
+  GstElement* element = gst_element_factory_make (factoryname, NULL);
+  gchar *old_name = GST_ELEMENT_NAME (element);
+  GST_ELEMENT_NAME (element) = g_strconcat (name_prefix, old_name, NULL);
+  g_free (old_name);
+  return element;
+}
+
 /* Caps begin */
 
 static GstStaticCaps static_audio_caps =
     GST_STATIC_CAPS (KMS_AGNOSTIC_AUDIO_CAPS);
 static GstStaticCaps static_video_caps =
     GST_STATIC_CAPS (KMS_AGNOSTIC_VIDEO_CAPS);
+static GstStaticCaps static_data_caps =
+    GST_STATIC_CAPS (KMS_AGNOSTIC_DATA_CAPS);
 static GstStaticCaps static_rtp_caps =
     GST_STATIC_CAPS (KMS_AGNOSTIC_RTP_CAPS);
 static GstStaticCaps static_raw_caps =
@@ -137,22 +168,28 @@ caps_can_intersect_with_static (const GstCaps * caps,
 }
 
 gboolean
-kms_utils_caps_are_audio (const GstCaps * caps)
+kms_utils_caps_is_audio (const GstCaps * caps)
 {
   return caps_can_intersect_with_static (caps, &static_audio_caps);
 }
 
 gboolean
-kms_utils_caps_are_video (const GstCaps * caps)
+kms_utils_caps_is_video (const GstCaps * caps)
 {
   return caps_can_intersect_with_static (caps, &static_video_caps);
 }
 
 gboolean
-kms_utils_caps_are_raw (const GstCaps * caps)
+kms_utils_caps_is_data (const GstCaps * caps)
+{
+  return caps_can_intersect_with_static (caps, &static_data_caps);
+}
+
+gboolean
+kms_utils_caps_is_rtp (const GstCaps * caps)
 {
   gboolean ret;
-  GstCaps *raw_caps = gst_static_caps_get (&static_raw_caps);
+  GstCaps *raw_caps = gst_static_caps_get (&static_rtp_caps);
 
   ret = gst_caps_is_always_compatible (caps, raw_caps);
 
@@ -162,10 +199,10 @@ kms_utils_caps_are_raw (const GstCaps * caps)
 }
 
 gboolean
-kms_utils_caps_are_rtp (const GstCaps * caps)
+kms_utils_caps_is_raw (const GstCaps * caps)
 {
   gboolean ret;
-  GstCaps *raw_caps = gst_static_caps_get (&static_rtp_caps);
+  GstCaps *raw_caps = gst_static_caps_get (&static_raw_caps);
 
   ret = gst_caps_is_always_compatible (caps, raw_caps);
 
@@ -179,7 +216,7 @@ kms_utils_caps_are_rtp (const GstCaps * caps)
 GstElement *
 kms_utils_create_convert_for_caps (const GstCaps * caps)
 {
-  if (kms_utils_caps_are_audio (caps)) {
+  if (kms_utils_caps_is_audio (caps)) {
     return gst_element_factory_make ("audioconvert", NULL);
   } else {
     return gst_element_factory_make ("videoconvert", NULL);
@@ -189,7 +226,7 @@ kms_utils_create_convert_for_caps (const GstCaps * caps)
 GstElement *
 kms_utils_create_mediator_element (const GstCaps * caps)
 {
-  if (kms_utils_caps_are_audio (caps)) {
+  if (kms_utils_caps_is_audio (caps)) {
     return gst_element_factory_make ("audioresample", NULL);
   } else {
     return gst_element_factory_make ("videoscale", NULL);
@@ -201,7 +238,7 @@ kms_utils_create_rate_for_caps (const GstCaps * caps)
 {
   GstElement *rate = NULL;
 
-  if (kms_utils_caps_are_video (caps)) {
+  if (kms_utils_caps_is_video (caps)) {
     rate = gst_element_factory_make ("videorate", NULL);
     g_object_set (G_OBJECT (rate), "average-period", GST_MSECOND * 200,
         "skip-to-first", TRUE, "drop-only", TRUE, NULL);
@@ -452,10 +489,13 @@ gap_detection_probe (GstPad * pad, GstPadProbeInfo * info, gpointer data)
 }
 
 void
-kms_utils_manage_gaps (GstPad * pad)
+kms_utils_pad_monitor_gaps (GstPad * pad)
 {
+  GST_INFO_OBJECT (pad, "Add probe: Detect stream gaps");
+
   gst_pad_add_probe (pad, GST_PAD_PROBE_TYPE_BUFFER,
       discont_detection_probe, NULL, NULL);
+
   gst_pad_add_probe (pad, GST_PAD_PROBE_TYPE_EVENT_DOWNSTREAM,
       gap_detection_probe, NULL, NULL);
 }

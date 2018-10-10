@@ -20,6 +20,7 @@
 
 #include <gst/gst.h>
 #include <KurentoException.hpp>
+#include <memory>
 #include <sstream>
 #include <boost/filesystem.hpp>
 
@@ -39,13 +40,14 @@ int
 ModuleManager::loadModule (std::string modulePath)
 {
   const kurento::FactoryRegistrar *registrar;
-  void *registrarFactory, *getVersion = NULL, *getName = NULL,
-                           *getDescriptor = NULL, *getGenerationTime = NULL;
+  void *registrarFactory, *getVersion = nullptr, *getName = nullptr,
+                          *getDescriptor = nullptr,
+                          *getGenerationTime = nullptr;
   std::string moduleFileName;
   std::string moduleName;
   std::string moduleVersion;
   std::string generationTime;
-  const char *moduleDescriptor = NULL;
+  const char *moduleDescriptor = nullptr;
 
   boost::filesystem::path path (modulePath);
 
@@ -65,7 +67,7 @@ ModuleManager::loadModule (std::string modulePath)
   }
 
   if (!module.get_symbol ("getFactoryRegistrar", registrarFactory) ) {
-    GST_WARNING ("Symbol 'getFactoryRegistrar' not found in library %s",
+    GST_DEBUG ("Symbol 'getFactoryRegistrar' not found in library %s",
                  moduleFileName.c_str() );
     return -1;
   }
@@ -128,9 +130,8 @@ ModuleManager::loadModule (std::string modulePath)
     generationTime = ( (GetGenerationTimeFunc) getGenerationTime) ();
   }
 
-  loadedModules[moduleFileName] = std::shared_ptr<ModuleData> (new ModuleData (
-                                    moduleName, moduleVersion, generationTime,
-                                    moduleDescriptor, factories) );
+  loadedModules[moduleFileName] = std::make_shared<ModuleData>(
+      moduleName, moduleVersion, generationTime, moduleDescriptor, factories);
 
   GST_INFO ("Loaded module: %s, version: %s, date: %s", moduleName.c_str(),
             moduleVersion.c_str(), generationTime.c_str() );
@@ -154,12 +155,11 @@ std::list<std::string> split (const std::string &s, char delim)
 void
 ModuleManager::loadModules (std::string dirPath)
 {
-  GST_INFO ("Looking for modules, path: %s", dirPath.c_str() );
+  GST_DEBUG ("Looking for modules, path: %s", dirPath.c_str() );
   boost::filesystem::path dir (dirPath);
 
   if (!boost::filesystem::is_directory (dir) ) {
-    GST_WARNING ("Unable to load modules from:  %s, it is not a directory",
-                 dirPath.c_str() );
+    GST_INFO ("Skip invalid path: %s", dirPath.c_str() );
     return;
   }
 
